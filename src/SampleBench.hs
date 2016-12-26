@@ -17,38 +17,36 @@ import qualified Data.Text.Encoding         as TE
 import           System.Environment
 import           System.Exit
 import           System.IO      (stderr)
-import           System.Process (shell)
+import           System.Process (shell, proc, CreateProcess)
 import           System.Process.ByteString
 
--- | Read command from env var `BENCHMARK_COMMANDS`
-getCommand :: IO String
-getCommand = do
-  cmdS <- getEnv "BENCHMARK_COMMAND"
+jsonFromVar :: FromJSON a => String -> IO a
+jsonFromVar name = do
+  cmdS <- getEnv name
   case eitherDecodeStrict (BSC.pack cmdS) of
-       Left err -> error ("Couldn't read benchmark command: " ++ err)
-       Right c  -> return c
+       Left  err -> error ("Couldn't read JSON from " ++ name ++ ": " ++ err)
+       Right c   -> return c
 
--- | Read sample data from filename given in commandline arg
-getInputs :: IO [BS.ByteString]
-getInputs = getArgs >>= \case
-  []    -> error "Require filename as argument, for JSON input data"
-  (f:_) -> do
-    inputBS <- LBSC.toStrict <$> LBSC.readFile f
-    case eitherDecodeStrict inputBS of
-      Left  err -> error  ("Failed to read JSON from " ++ f ++ ": " ++ err)
-      Right xs  -> return (map TE.encodeUtf8 xs)
+-- | Read command from env var `BENCHMARK_COMMANDS`
+getBenchCommand :: IO String
+getBenchCommand = jsonFromVar "BENCHMARK_COMMAND"
 
--- | Run shell command, taking stdin and returning stderr. Errors on non-zero
+-- | Read command for generating input, from env var `BENCHMARK_INPUT_SOURCE`
+getInputCommand :: Int -> IO BS.ByteString
+getInputCommand n = do
+  cmd <- jsonFromVar "BENCHMARK_INPUT_SOURCE"
+  runCommand (proc cmd [show n]) ""
+
+-- | Run a process, taking stdin and returning stdout. Errors on non-zero
 -- | exit code. Collects up command's stderr output and writes it to our stderr
 -- | handle after the command finishes.
-runCommand :: String -> BS.ByteString -> IO BS.ByteString
+runCommand :: CreateProcess -> BS.ByteString -> IO BS.ByteString
 runCommand command input = do
-  (code, out, err) <- readCreateProcessWithExitCode (shell command) input
+  (code, out, err) <- readCreateProcessWithExitCode command input
   BSC.hPut stderr err
   case code of
     ExitSuccess   -> return out
-    ExitFailure n -> error (concat ["Command ", command, " failed (code ",
-                                    show n])
+    ExitFailure n -> error (concat ["Command failed (code ", show n, ")"])
 
 -- | `prependToRef r x` prepends the result of `x` to the contents of `r`
 prependToRef :: NFData a => IORef [a] -> IO a -> IO a
@@ -58,44 +56,50 @@ prependToRef ref ioX = do
   modifyIORef' ref (x':)
   head <$> readIORef ref
 
--- | `benchCmd [s1, s2, ...] c` creates a benchmark for the command `c`, using
--- | `s1` as stdin on the first iteration, `s2` on the second, and so on.
--- | Returns a pair `(b, r)` where `b` is the benchmark and `r` will return the
--- | stdout captured from any iterations of `b` that have been run. Hence you'll
--- | probably want to execute `r` *after* `b`.
-benchCmd :: [BS.ByteString] -> String -> IO (Standoff (), IO [BS.ByteString])
-benchCmd inputLst command = do
-  -- Keep track of remaining inputs
-  inputs <- newIORef inputLst
+-- | `benchCmd i c` creates a benchmark for the shell command `c`. The stdin for
+-- | `c` comes from `i`: the first iteration comes from `i 0`, the second from
+-- | `i 1`, etc.
+-- |
+-- | Returns a pair `(b, r)` where `b` is the benchmark and `r` will return a
+-- | list of stdout strings captured from any iterations of `b` that
+-- | have been run. Hence you'll probably want to execute `r` *after*
+-- | benchmarking `b`.
+benchCmd :: String -> IO (Standoff (), IO [BS.ByteString])
+benchCmd command = do
+  -- Count how many iterations we've run
+  count <- newIORef 0
 
   -- This will accumulate our command outputs
   outputs <- newIORef []
 
   return (subject (T.append "Running " (T.pack command)) $ do
-            -- Pause benchmarking while we choose the next sample
+            -- Pause benchmarking while we get the next input
             pause
             input <- liftIO $ do
-              (x:xs) <- readIORef inputs
-              writeIORef inputs xs
-              evaluate (force x)
+              n     <- readIORef count
+              input <- getInputCommand n
+              modifyIORef' count (+1)
+              evaluate (force input)
 
             -- Resume benchmarking to time the command
             continue
-            nfIO (prependToRef outputs (runCommand command input)),
+            nfIO (prependToRef outputs (runCommand (shell command) input)),
+
+          -- Outputs are accumulated at the head, so reverse into correct order
           reverse <$> readIORef outputs)
 
 defaultMain = do
-  command <- getCommand
-  inputs  <- getInputs
+  command  <- getBenchCommand
 
   -- For some reason CriterionPlus runs one more iteration than we ask for, so
   -- we take one off before asking
-  let iterations = length inputs - 1
+  --let iterations = length inputs - 1
 
   -- The only way to set the CriterionPlus iteration count appears to be via a
   -- commandline arg, so we fake it with a wrapper.
-  withArgs ["-s", show iterations] $ do
-    (b, getResult) <- benchCmd inputs command
+  --withArgs ["-s", show iterations] $
+  do
+    (b, getResult) <- benchCmd command
     benchmark (standoff "Benchmark" b)
 
     result <- getResult

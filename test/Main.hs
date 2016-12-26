@@ -1,3 +1,5 @@
+{-# LANGUAGE LambdaCase, OverloadedStrings #-}
+
 module Main where
 
 import Control.Applicative
@@ -11,23 +13,15 @@ import Test.Tasty (defaultMain, testGroup, localOption)
 import Test.Tasty.QuickCheck
 
 main = defaultMain $ testGroup "All tests" [
-    testProperty "Can parse command" canGetCommand
+    testProperty "Can parse command" canGetBenchCommand
+  --, testProperty ""
   ]
 
 -- Tests
 
-canGetCommand :: Property
-canGetCommand = forAllShrink mkStr shrnk go
-  where go x = monadicIO $ do
-          x' <- run $ withEnv [("BENCHMARK_COMMAND", show x)] getCommand
-          assert (x == x')
-
-        mkStr   = (filter valid <$> listOf1 arbitrary) `suchThat` (not . null)
-        valid x = isPrint x && isAscii x
-
-        shrnk "a"   = []
-        shrnk (c:_) = ["a"]
-        shrnk xs    = tail (tails xs)
+canGetBenchCommand (JS s) = monadicIO $ do
+  s' <- run $ withEnv [("BENCHMARK_COMMAND", show s)] getBenchCommand
+  assert (s == s')
 
 -- Helper functions
 
@@ -46,3 +40,18 @@ withEnv ((name, val):xs) p = do
        Nothing  -> setEnv name ""
        Just old -> setEnv name old
   return result
+
+newtype JsonString = JS String
+
+instance Arbitrary JsonString where
+  arbitrary = JS <$> nonEmpty
+    where nonEmpty = ascii `suchThat` (not . null)
+          ascii    = filter valid <$> listOf1 arbitrary
+          valid x  = isPrint x && isAscii x
+  shrink (JS s) = case s of
+    "a"    -> []
+    (_:[]) -> [JS "a"]
+    (_:cs) -> map JS (tails cs)
+
+instance Show JsonString where
+  show (JS s) = show s

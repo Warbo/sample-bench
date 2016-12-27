@@ -7,6 +7,7 @@ import           Data.Aeson
 import qualified Data.ByteString.Char8      as BSC
 import qualified Data.ByteString.Lazy.Char8 as LBSC
 import           Data.Char
+import           Data.IORef
 import           Data.List
 import           SampleBench hiding (defaultMain)
 import           System.Environment
@@ -18,6 +19,7 @@ import           Test.Tasty.QuickCheck
 main = defaultMain $ testGroup "All tests" [
     testProperty "Can parse command"  canGetBenchCommand
   , testProperty "JSON encode/decode" jsonDecode
+  , testProperty "Can prepend result" canPrepend
   ]
 
 -- Tests
@@ -30,6 +32,13 @@ jsonDecode (NES name) val = '=' `notElem` name ==> monadicIO $ do
 canGetBenchCommand (NES s) = monadicIO $ do
   s' <- run $ withEnv [("BENCHMARK_COMMAND", show (JSON s))] getBenchCommand
   assert (s == s')
+
+canPrepend :: String -> [String] -> Property
+canPrepend x xs = monadicIO $ do
+  result <- run $ do ref <- newIORef xs
+                     prependToRef ref (return x)
+                     readIORef    ref
+  assert (result == x:xs)
 
 -- Helpers
 

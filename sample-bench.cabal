@@ -46,6 +46,9 @@ test-suite test
                      , sample-bench
                      , aeson
                      , bytestring
+                     , criterion-plus
                      , QuickCheck == 2.5
+                     , process
+                     , silently
                      , tasty
                      , tasty-quickcheck == 0.8

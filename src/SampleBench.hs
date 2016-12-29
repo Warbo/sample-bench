@@ -56,15 +56,15 @@ prependToRef ref ioX = do
   modifyIORef' ref (x':)
   head <$> readIORef ref
 
--- | `benchCmd i c` creates a benchmark for the shell command `c`. The stdin for
--- | `c` comes from `i`: the first iteration comes from `i 0`, the second from
+-- | `benchCmd i p` creates a benchmark for the process `p`. The stdin for `p`
+-- | comes from `i`: the first iteration comes from `i 0`, the second from
 -- | `i 1`, etc.
 -- |
 -- | Returns a pair `(b, r)` where `b` is the benchmark and `r` will return a
 -- | list of stdout strings captured from any iterations of `b` that
 -- | have been run. Hence you'll probably want to execute `r` *after*
 -- | benchmarking `b`.
-benchCmd :: String -> IO (Standoff (), IO [BS.ByteString])
+benchCmd :: CreateProcess -> IO (Standoff (), IO [BS.ByteString])
 benchCmd command = do
   -- Count how many iterations we've run
   count <- newIORef 0
@@ -72,7 +72,7 @@ benchCmd command = do
   -- This will accumulate our command outputs
   outputs <- newIORef []
 
-  return (subject (T.append "Running " (T.pack command)) $ do
+  return (subject "Running command" $ do
             -- Pause benchmarking while we get the next input
             pause
             input <- liftIO $ do
@@ -83,23 +83,27 @@ benchCmd command = do
 
             -- Resume benchmarking to time the command
             continue
-            nfIO (prependToRef outputs (runCommand (shell command) input)),
+            nfIO (prependToRef outputs (runCommand command input)),
 
           -- Outputs are accumulated at the head, so reverse into correct order
           reverse <$> readIORef outputs)
 
+-- | The easiest way to set the CriterionPlus iteration count appears to be via
+-- | a commandline arg, so we fake it with a wrapper.
+withIterations :: Int -> IO a -> IO a
+withIterations n = withArgs ["-s", show n]
+
 defaultMain = do
   command  <- getBenchCommand
 
-  -- For some reason CriterionPlus runs one more iteration than we ask for, so
-  -- we take one off before asking
-  --let iterations = length inputs - 1
+  -- NOTE: CriterionPlus uses the first iteration to estimate the time required
+  -- to complete the benchmark. If it takes less than 0.2 seconds, it will be
+  -- discarded and re-run, resulting in one extra iteration of the benchmarked
+  -- command.
+  iterations <- read <$> getEnv "BENCHMARK_ITERATIONS"
 
-  -- The only way to set the CriterionPlus iteration count appears to be via a
-  -- commandline arg, so we fake it with a wrapper.
-  --withArgs ["-s", show iterations] $
-  do
-    (b, getResult) <- benchCmd command
+  withIterations iterations $ do
+    (b, getResult) <- benchCmd (shell command)
     benchmark (standoff "Benchmark" b)
 
     result <- getResult

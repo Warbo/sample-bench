@@ -24,7 +24,7 @@ library
                      , criterion-plus
                      , deepseq
                      , process
-                     , process-listlike
+                     , process-extras
                      , text
                      , transformers
   hs-source-dirs:      src

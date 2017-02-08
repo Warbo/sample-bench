@@ -151,12 +151,12 @@ instance Arbitrary NonEmptyString where
     where ascii    = arbitrary `suchThat` valid
           valid x  = isPrint x && isAscii x
   shrink (NES s) = case s of
-    ""     -> error "Empty NonEmptyString"
-    "a"    -> []
-    (_:[]) -> [NES "a"]
-    _      -> let hs = tail          (init (inits s))
-                  ts = tail (reverse (tail (tails s)))
-               in map NES (hs ++ ts)
+    ""  -> error "Empty NonEmptyString"
+    "a" -> []
+    [_] -> [NES "a"]
+    _   -> let hs = tail          (init (inits s))
+               ts = tail (reverse (tail (tails s)))
+            in map NES (hs ++ ts)
 
 data JsonOf a where
   JSON :: (FromJSON a, ToJSON a) => a -> JsonOf a

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+
+function usage {
+    {
+        echo "CMD=foo GEN_INPUT=bar INFO=baz REPS=n benchmark"
+        echo ""
+        echo "Loops from 1 to n inclusive, running 'bar baz 0',"
+        echo "'bar baz 1', ..., 'bar baz n'. Each call should generate some"
+        echo "data on stdout. The 'foo' command is run on this data and timed."
+        echo "The time, stdin, stdout and any failures are collected for each"
+        echo "iteration and the results are returned in JSON format."
+        echo "NOTE: Will create (or overwrite!) files in the current directory."
+        echo "Time and memory limits can be imposed by MAX_SECS and MAX_KB,"
+        echo "which default to 1 hour and 2GB."
+    } 1>&2
+    exit 1
+}
+
+[[ -n "$CMD"       ]] || usage
+[[ -n "$GEN_INPUT" ]] || usage
+[[ -n "$REPS"      ]] || usage
+
+
+function checkStderr {
+    if grep -f <(for E in "jq: error" "MLSpec: Failed" "syntax error" \
+                          "Argument list too long" "out of memory"    \
+                          "parse error:" "^error:"
+                 do
+                     echo "$E"
+                 done) < "$1" 1>&2
+    then
+        echo "Errors found in '$1'" 1>&2
+        return 2
+    fi
+    return 0
+}
+
+function run {
+    # Generate input using the provided relevant
+    "$GEN_INPUT" "$INFO" "$1" > stdin || {
+        echo "Failed to generate input" 1>&2
+        exit 1
+    }
+
+    # Run the given command, benchmarking with 'time' and enforcing
+    # time/space limits with 'withTimeout'. We tee stderr so the user can see
+    # it in real time. "command time" avoids bash's builtin "time".
+    command time -o time -f '%e' \
+            withTimeout "$CMD" < stdin 1> stdout 2> >(tee stderr >&2)
+    CODE="$?"
+
+    collectResult "$CODE"
+}
+
+function collectResult {
+    storeResult
+    checkForFailure "$1"
+    reportResult
+}
+
+function storeResult {
+    # Dump stdio into the Nix store, then format data/paths as JSON
+     STDIN=$(nix-store --add stdin)
+    STDOUT=$(nix-store --add stdout)
+    STDERR=$(nix-store --add stderr)
+}
+
+function checkForFailure {
+    FAILURE=null
+    if [[ "$1" -ne 0 ]]
+    then
+        FAILURE="$1"
+
+        echo "Failed to run '$CMD'" 1>&2
+        for F in stdin stderr stdout
+        do
+            if [[ -e "$F" ]]
+            then
+                echo "Contents of $F:"  1>&2
+                cat  "$F"               1>&2
+                echo "End of $F"        1>&2
+            else
+                echo "No $F produced" 1>&2
+            fi
+        done
+    elif ! checkStderr "$STDERR"
+    then
+        echo "Errors found in '$STDERR' for '$CMD'" 1>&2
+        FAILURE="in stderr"
+    else
+        echo "Finished running '$CMD'" 1>&2
+    fi
+}
+
+function reportResult {
+    jq -n --arg     stdin  "$STDIN"    \
+          --arg     stdout "$STDOUT"   \
+          --arg     stderr "$STDERR"   \
+          --arg     time   $(cat time) \
+          --argjson failure "$FAILURE"   \
+          '{"failure" : $failure,
+            "time"    : $time,
+            "stdin"   : $stdin,
+            "stdout"  : $stdout,
+            "stderr"  : $stderr}'
+}
+
+function loop {
+    for N in $(seq 1 "$REPS")
+    do
+        run "$N"
+    done
+}
+
+loop | jq -s --arg cmd "$CMD" \
+             --arg info "$INFO" \
+          '{"cmd": $cmd, "info": $info, "results": .}'

@@ -2,13 +2,15 @@
 
 function usage {
     {
-        echo "CMD=foo GEN_INPUT=bar INFO=baz REPS=n benchmark"
+        echo "CMD=foo GEN_INPUT=bar INFO=baz NIXENV=quux REPS=n benchmark"
         echo ""
         echo "Loops from 1 to n inclusive, running 'bar baz 0',"
         echo "'bar baz 1', ..., 'bar baz n'. Each call should generate some"
         echo "data on stdout. The 'foo' command is run on this data and timed."
         echo "The time, stdin, stdout and any failures are collected for each"
         echo "iteration and the results are returned in JSON format."
+        echo "Each command invocation is performed inside a Nix shell with"
+        echo "environment NIXENV."
         echo "NOTE: Will create (or overwrite!) files in the current directory."
         echo "Time and memory limits can be imposed by MAX_SECS and MAX_KB,"
         echo "which default to 1 hour and 2GB."
@@ -19,7 +21,6 @@ function usage {
 [[ -n "$CMD"       ]] || usage
 [[ -n "$GEN_INPUT" ]] || usage
 [[ -n "$REPS"      ]] || usage
-
 
 function checkStderr {
     if grep -f <(for E in "jq: error" "MLSpec: Failed" "syntax error" \
@@ -45,9 +46,18 @@ function run {
     # Run the given command, benchmarking with 'time' and enforcing
     # time/space limits with 'withTimeout'. We tee stderr so the user can see
     # it in real time. "command time" avoids bash's builtin "time".
-    command time -o time -f '%e' \
-            withTimeout "$CMD" < stdin 1> stdout 2> >(tee stderr >&2)
-    CODE="$?"
+    if [[ -n "$NIXENV" ]]
+    then
+        nix-shell -E "$NIXENV" \
+                  --run "command time -o time -f '%e' \
+                           withTimeout '$CMD' < stdin 1> stdout \
+                                                      2> >(tee stderr >&2)"
+        CODE="$?"
+    else
+        command time -o time -f '%e' \
+                withTimeout "$CMD" < stdin 1> stdout 2> >(tee stderr >&2)
+        CODE="$?"
+    fi
 
     collectResult "$CODE"
 }

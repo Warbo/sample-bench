@@ -48,7 +48,7 @@ function run {
     # it in real time. "command time" avoids bash's builtin "time".
     if [[ -n "$NIXENV" ]]
     then
-        nix-shell -E "$NIXENV" \
+        nix-shell -p "$NIXENV" \
                   --run "command time -o time -f '%e' \
                            withTimeout '$CMD' < stdin 1> stdout \
                                                       2> >(tee stderr >&2)"

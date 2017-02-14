@@ -28,7 +28,9 @@ with rec {
       mkdir -p "$out/bin"
       cp timeout "$out/bin"
       cp "$withTimeout" "$out/bin/withTimeout"
-      wrapProgram "$out/bin/timeout"     --prefix PATH : "${perl}/bin"
+      wrapProgram "$out/bin/timeout"     --prefix PATH : "${perl}/bin"   \
+                                         --prefix PATH : "${procps}/bin" \
+                                         --prefix PATH : "${coreutils}/bin"
       wrapProgram "$out/bin/withTimeout" --prefix PATH : "$out/bin"
     '';
   };

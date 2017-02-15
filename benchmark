@@ -49,13 +49,13 @@ function run {
     if [[ -n "$NIXENV" ]]
     then
         nix-shell -p "$NIXENV" \
-                  --run "command time -o time -f '%e' \
+                  --run "command time -o time -f '(time %e)' \
                            withTimeout '$CMD' < stdin 1> stdout \
                                                       2> >(tee stderr >&2)"
         CODE="$?"
     else
-        command time -o time -f '%e' \
-                withTimeout "$CMD" < stdin 1> stdout 2> >(tee stderr >&2)
+        command time -o time -f '(time %e)' \
+          withTimeout "$CMD" < stdin 1> stdout 2> >(tee stderr >&2)
         CODE="$?"
     fi
 
@@ -80,34 +80,23 @@ function checkForFailure {
     if [[ "$1" -ne 0 ]]
     then
         FAILURE="$1"
-
         echo "Failed to run '$CMD'" 1>&2
-        for F in stdin stderr stdout
-        do
-            if [[ -e "$F" ]]
-            then
-                echo "Contents of $F:"  1>&2
-                cat  "$F"               1>&2
-                echo "End of $F"        1>&2
-            else
-                echo "No $F produced" 1>&2
-            fi
-        done
     elif ! checkStderr "$STDERR"
     then
-        echo "Errors found in '$STDERR' for '$CMD'" 1>&2
-        FAILURE="in stderr"
+        echo "Errors found in stderr of '$CMD'" 1>&2
+        FAILURE="stderr"
     else
         echo "Finished running '$CMD'" 1>&2
     fi
 }
 
 function reportResult {
+    T=$(grep -o '(time [0-9.]*)' < time | grep -o '[0-9.]*')
     jq -n --arg     stdin  "$STDIN"    \
           --arg     stdout "$STDOUT"   \
           --arg     stderr "$STDERR"   \
-          --arg     time   $(cat time) \
-          --argjson failure "$FAILURE"   \
+          --argjson time   "$T"        \
+          --argjson failure "$FAILURE" \
           '{"failure" : $failure,
             "time"    : $time,
             "stdin"   : $stdin,

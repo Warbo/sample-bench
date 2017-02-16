@@ -14,8 +14,8 @@ stdenv.mkDerivation rec {
     #!/usr/bin/env bash
     TIME_OPT=""
      MEM_OPT=""
-    [[ -z "$MAX_SECS" ]] || TIME_OPT="-t '$MAX_SECS'"
-    [[ -z "$MAX_KB"   ]] ||  MEM_OPT="-m '$MAX_KB'"
+    [[ -z "$MAX_SECS" ]] || TIME_OPT="-t $MAX_SECS"
+    [[ -z "$MAX_KB"   ]] ||  MEM_OPT="-m $MAX_KB"
     timeout -c --no-info-on-success $TIME_OPT $MEM_OPT "$@"
   '';
 

@@ -2,18 +2,27 @@
 
 function usage {
     {
-        echo "CMD=foo GEN_INPUT=bar INFO=baz NIXENV=quux REPS=n benchmark"
+        echo "'benchmark' called incorrectly. Usage:"
         echo ""
-        echo "Loops from 1 to n inclusive, running 'bar baz 0',"
-        echo "'bar baz 1', ..., 'bar baz n'. Each call should generate some"
-        echo "data on stdout. The 'foo' command is run on this data and timed."
+        echo "CMD=foo GEN_INPUT=bar INFO=baz REPS=n benchmark"
+        echo ""
+        echo "The GEN_INPUT parameter is a command for generating samples."
+        echo "In this example, a loop will run 'bar baz 1', 'bar baz 2', ...,"
+        echo "up to 'bar baz n'. The stdout of each are the samples."
+        echo "For each sample, we time the execution of whatever's in the CMD"
+        echo "parameter, sending the sample into its stdin."
         echo "The time, stdin, stdout and any failures are collected for each"
-        echo "iteration and the results are returned in JSON format."
-        echo "Each command invocation is performed inside a Nix shell with"
-        echo "environment NIXENV."
-        echo "NOTE: Will create (or overwrite!) files in the current directory."
-        echo "Time and memory limits can be imposed by MAX_SECS and MAX_KB,"
-        echo "which default to 1 hour and 2GB."
+        echo "sample and the results are returned in JSON format."
+        echo ""
+        echo "To run CMD (but not GEN_INPUT) inside a particular Nix"
+        echo "environment, you can supply a Nix expression as NIXENV. This is"
+        echo "an easy way to prevent setup costs from being benchmarked."
+        echo ""
+        echo "NOTE: This command will create (or overwrite!) files in the"
+        echo "current working directory!"
+        echo ""
+        echo "Limits can be imposed on time and space usage by setting MAX_SECS"
+        echo "and MAX_KB, respectively."
     } 1>&2
     exit 1
 }

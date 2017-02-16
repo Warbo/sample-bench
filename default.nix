@@ -15,9 +15,11 @@ with rec {
     # Wrapper for timeout, which provides sensible defaults
     withTimeout = writeScript "with-timeout" ''
       #!/usr/bin/env bash
-      [[ -n "$MAX_SECS" ]] || export MAX_SECS=3600
-      [[ -n "$MAX_KB"   ]] || export MAX_KB=2000000
-      timeout -c --no-info-on-success -t "$MAX_SECS" -m "$MAX_KB" "$@"
+      TIME_OPT=""
+       MEM_OPT=""
+      [[ -z "$MAX_SECS" ]] || TIME_OPT="-t '$MAX_SECS'"
+      [[ -z "$MAX_KB"   ]] ||  MEM_OPT="-m '$MAX_KB'"
+      timeout -c --no-info-on-success $TIME_OPT $MEM_OPT "$@"
     '';
 
     buildInputs  = [ makeWrapper ];
